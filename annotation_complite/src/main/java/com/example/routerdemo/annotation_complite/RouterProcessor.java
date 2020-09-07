@@ -10,6 +10,7 @@ import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.ParameterSpec;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeSpec;
+import com.squareup.javapoet.WildcardTypeName;
 
 
 import java.util.Collections;
@@ -118,8 +119,60 @@ public class RouterProcessor extends AbstractProcessor {
             return false;
         }
         generateRouteGroupFile();
+
+        //生成路由入口文件
+        if (entries == null || entries.size() <= 0) {
+            return false;
+        }
+        generateRouteEntryFile();
         return true;
     }
+
+    private void generateRouteEntryFile() {
+        //4.1、生成参数类型
+        ParameterizedTypeName parameterizedTypeName1 = ParameterizedTypeName.get(
+                ClassName.get(Map.class),
+                ClassName.get(String.class),
+                ParameterizedTypeName.get(
+                        ClassName.get(Class.class),
+                        WildcardTypeName.subtypeOf(ClassName.get("com.example.routerdemo.annotation", "IRouteGroup"))
+                )
+        );
+
+        //4.2、生成参数
+        ParameterSpec parameterSpec1 = ParameterSpec.builder(parameterizedTypeName1, "entries").build();
+
+        //4.3、生成方法
+        MethodSpec.Builder methodSpec = MethodSpec.methodBuilder("loadRouteEntry")
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(parameterSpec1);
+
+        for (Map.Entry<String, String> entry : entries.entrySet()) {
+            //entries.put("main", JRouterTest_Group_main.class);
+            methodSpec.addStatement("entries.put($S,$T.class)",
+                    entry.getKey(),
+                    ClassName.get("com.example.routerdemo", entry.getValue()));
+        }
+
+        // 4.5、生成入口文件
+
+        TypeSpec typeSpec = TypeSpec.classBuilder("router_entry_" + moduleName)
+                .addMethod(methodSpec.build())
+                .addModifiers(Modifier.PUBLIC)
+                .addSuperinterface(ClassName.get("com.example.routerdemo.annotation", "IEntry"))
+                .build();
+
+        JavaFile javaFile = JavaFile.builder("com.example.routerdemo", typeSpec)
+                .build();
+
+        try {
+            javaFile.writeTo(filer);
+        } catch (Exception e) {
+            log.printMessage(Diagnostic.Kind.ERROR, "generate route entry file exception");
+            e.printStackTrace();
+        }
+    }
+
     //public class app_Group_main implements IRouteGroup {
     //  public void loadRouteInfo(Map<String, RouteMeta> routes) {
     //    routes.put("/main/mainactivity",RouteMeta.build("/main/mainactivity","main",MainActivity.class,TypeEnum.ACTIVITY));
@@ -161,6 +214,11 @@ public class RouterProcessor extends AbstractProcessor {
             } catch (Exception e) {
                 log.printMessage(Diagnostic.Kind.ERROR, "generate route group file exception");
             }
+
+            if (entries == null) {
+                entries = new HashMap<>();
+            }
+            entries.put(groupName, groupFileName);//保存生成的路由文件信息，作为之后的查找入口
         }
     }
 
